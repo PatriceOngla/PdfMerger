@@ -14,7 +14,6 @@ using System.Runtime.Serialization;
 using static System.Net.Mime.MediaTypeNames;
 using System.Data;
 using System.Diagnostics;
-using PdfMerger;
 using SixLabors.ImageSharp.Metadata.Profiles.Exif;
 using System.Diagnostics.CodeAnalysis;
 
@@ -71,7 +70,7 @@ void MergeLoc(string sourceFolderPath, int level)
         using var mergedDoc = PdfDocument.Merge(pdfDocs);
         var mergedDocName = GetMergedFileName(currentFolderPath);
         var mergedDocFullName = Path.Combine(currentFolderPath, mergedDocName);
-        //mergedDoc.SaveAs(mergedDocFullName);
+        mergedDoc.SaveAs(mergedDocFullName);
         ConsoleWrite($"{pdfDocs.Count} documents merged in '{mergedDocName}'", level + 2);
         return mergedDocName;
     }
