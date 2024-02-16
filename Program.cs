@@ -14,6 +14,9 @@ using System.Runtime.Serialization;
 using static System.Net.Mime.MediaTypeNames;
 using System.Data;
 using System.Diagnostics;
+using GetBankccountData;
+using SixLabors.ImageSharp.Metadata.Profiles.Exif;
+using System.Diagnostics.CodeAnalysis;
 
 //Licence Iron PDF (test - 1 mois)
 License.LicenseKey = "IRONSUITE.PONGLA.PUBLIC.LAPOSTE.NET.23963-6A3FDD8D07-JLJAD-OLDZZKIU5GM2-BMN4NAAKREBO-574WYQAE4LHC-XPWT7S72AQSZ-GEXT6IZAHB7S-ASPCER43TYTZ-ZHAJKU-TLUTDCDRVWKLUA-DEPLOYMENT.TRIAL-3XMQDE.TRIAL.EXPIRES.25.FEB.2024";
@@ -21,7 +24,11 @@ License.LicenseKey = "IRONSUITE.PONGLA.PUBLIC.LAPOSTE.NET.23963-6A3FDD8D07-JLJAD
 Console.WriteLine("C'est parti !");
 
 //Testé pour La Poste et SG mais pas pour Bred
-var sourceFolderPath = "\\\\SAPIENCE12\\Partage\\Pierre Wattenne\\Documents justificatifs\\Relevés de compte\\La Poste\\2020"; //\\Compte Carte CB;\\La Poste \\Société Générale
+var sourceFolderPath = "\\\\SAPIENCE12\\Partage\\Pierre Wattenne\\Documents justificatifs\\Relevés de compte"; //\\La Poste\\2020"; //\\Compte Carte CB;\\La Poste \\Société Générale
+
+var merger = new PdfMerger();
+merger.Merge(sourceFolderPath);
+
 var pdfs = Directory.GetFiles(sourceFolderPath, "*.pdf", SearchOption.AllDirectories);
 var accountEntries = new List<AccountEntry>();
 
@@ -42,7 +49,7 @@ foreach (var pdf in pdfs)
 
     DateTime fileEditionDate = GetFileEditionDate(Path.GetFileName(pdf));
 
-    var pdfDocument = new IronPdf.PdfDocument(pdf);
+    var pdfDocument = new PdfDocument(pdf);
     var text = pdfDocument.ExtractAllText();
     if (text == null) throw new Exception($"Unable to parse '{pdf}'.");
 
@@ -221,10 +228,10 @@ string GetTextToParse(string allText, bool forSG, string entryType)
 
 public class AccountEntry
 {
-    public String AccountName { get; set; }
-    public String EntryType { get; set; }
+    public required String AccountName { get; set; }
+    public required String EntryType { get; set; }
     public DateTime EffectiveDate { get; set; }
     public DateTime? ValueDate { get; set; }
-    public string Label { get; set; }
+    public required string Label { get; set; }
     public decimal? Amount { get; set; }
 }
