@@ -7,7 +7,7 @@ using IronPdf;
 using System.Diagnostics;
 using System.ComponentModel.Design;
 
-namespace GetBankccountData
+namespace PdfMerger
 {
 
 

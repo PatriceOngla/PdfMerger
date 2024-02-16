@@ -14,7 +14,7 @@ using System.Runtime.Serialization;
 using static System.Net.Mime.MediaTypeNames;
 using System.Data;
 using System.Diagnostics;
-using GetBankccountData;
+using PdfMerger;
 using SixLabors.ImageSharp.Metadata.Profiles.Exif;
 using System.Diagnostics.CodeAnalysis;
 
@@ -23,215 +23,78 @@ License.LicenseKey = "IRONSUITE.PONGLA.PUBLIC.LAPOSTE.NET.23963-6A3FDD8D07-JLJAD
 
 Console.WriteLine("C'est parti !");
 
-//Testé pour La Poste et SG mais pas pour Bred
 var sourceFolderPath = "\\\\SAPIENCE12\\Partage\\Pierre Wattenne\\Documents justificatifs\\Relevés de compte"; //\\La Poste\\2020"; //\\Compte Carte CB;\\La Poste \\Société Générale
 
-var merger = new PdfMerger();
-merger.Merge(sourceFolderPath);
+Merge(sourceFolderPath);
 
-var pdfs = Directory.GetFiles(sourceFolderPath, "*.pdf", SearchOption.AllDirectories);
-var accountEntries = new List<AccountEntry>();
+string rootPath;
 
-String accountName = "?";
-String entryType = "?";
-
-var datePattern = "";
-var shortDatePattern = @"\d{2}\/(?'EntryMonth'\d{2})";
-var longDatePattern = shortDatePattern + @"\/\d{2}";
-var veryLongDatePattern = shortDatePattern + @"\/\d{4}";
-var amountPattern = @"(?'Amount'(\d{1,3})(?:\.\d{3})*,\d{2})";
-var spaceOrEndOfLinePattern = @"(?:\s|\r?\n|\r)";
-var isCardAccount = false;
-
-foreach (var pdf in pdfs)
+void Merge(string sourceFolderPath)
 {
-    Console.WriteLine(pdf);
+    rootPath = sourceFolderPath;
+    MergeLoc(sourceFolderPath, 0);
+}
 
-    DateTime fileEditionDate = GetFileEditionDate(Path.GetFileName(pdf));
+void MergeLoc(string sourceFolderPath, int level)
+{
+    #region Local functions
 
-    var pdfDocument = new PdfDocument(pdf);
-    var text = pdfDocument.ExtractAllText();
-    if (text == null) throw new Exception($"Unable to parse '{pdf}'.");
+    void ConsoleWrite(string msg, int? forcedLevel = null) => Console.WriteLine($"{new string(' ', 2 * (forcedLevel ?? level))}{msg}");
 
-    var forSG = text.Contains("Société Générale");
-    if (forSG)
+    string GetMergedFileName(string currentFolderPath)
     {
-        accountName = "SG Patrice Ongla";
-        isCardAccount = text.Contains("RELEVÉ CARTE");
-        if (isCardAccount) entryType = "CB"; else entryType = "Autre";
-    }
-    else
-    {
-        accountName = "BP Claire Pellerin";
-        entryType = "?";
+        var localPath = currentFolderPath.Replace(rootPath, "");
+        if (localPath.StartsWith("\\")) localPath = localPath.Substring(1);
+        var r = localPath.Replace(@"\", "-") + ".pdf";
+        return r;
     }
 
-    SetSubPatterns(forSG, entryType);
-
-    var textToParse = GetTextToParse(text, forSG, entryType);
-
-    var pattern = GetPattern(forSG, entryType);
-    Regex regex = new Regex(pattern, RegexOptions.Singleline | RegexOptions.Multiline);
-
-    var matches = regex.Matches(textToParse);
-
-    if (matches.Count == 0)
-        throw new Exception("No match !");
-
-    foreach (Match match in matches)
+    string? MergeLocalPdfs(string currentFolderPath)
     {
-        var rowEffectiveDate = match.Groups["EffectiveDate"].Value;
-        var rowValueDate = match.Groups["ValueDate"].Value;
-        string effectiveDate, valueDate;
-        if (forSG)
+        Console.WriteLine();
+        ConsoleWrite($"Start merging PDF documents in subfloder './{Path.GetFileName(currentFolderPath)}'.", level + 1);
+        string[] pdfNames = Directory.GetFiles(currentFolderPath, "*.pdf", SearchOption.TopDirectoryOnly);
+
+        if (pdfNames.Length == 0)
         {
-            effectiveDate = rowEffectiveDate;
-            valueDate = rowValueDate;
-        }
-        else
-        {
-            var year = fileEditionDate.Year;
-            var month = fileEditionDate.Month;
-            var entryMonth = match.Groups["EffectiveDateMonth"].Value;
-            var yearOffset = (entryMonth == "12" && month == 1) ? -1 : 0;
-            effectiveDate = rowEffectiveDate + "/" + (year + yearOffset);
-            valueDate = "";
+            ConsoleWrite($"No PDF documents found in '{currentFolderPath}'.", level + 1);
+            return null;
         }
 
+        var pdfDocs = new List<PdfDocument>();
+        foreach (var pdfName in pdfNames)
         {
-            var accountEntry = new AccountEntry
-            {
-                AccountName = accountName,
-                EntryType = entryType,
-                EffectiveDate = DateTime.Parse(effectiveDate),
-                ValueDate = (string.IsNullOrEmpty(valueDate)) ? null : DateTime.Parse(valueDate),
-                Label = match.Groups["Label"].Value,
-                Amount = GetAmount(match, isCardAccount, forSG)
-            };
+            ConsoleWrite($"Found pdf file '{Path.GetFileName(pdfName)}'", level + 2);
+            var pdf = PdfDocument.FromFile(pdfName);
+            pdfDocs.Add(pdf);
+        }
+        using var mergedDoc = PdfDocument.Merge(pdfDocs);
+        var mergedDocName = GetMergedFileName(currentFolderPath);
+        var mergedDocFullName = Path.Combine(currentFolderPath, mergedDocName);
+        //mergedDoc.SaveAs(mergedDocFullName);
+        ConsoleWrite($"{pdfDocs.Count} documents merged in '{mergedDocName}'", level + 2);
+        return mergedDocName;
+    }
 
-            System.Diagnostics.Debug.Print($"{accountEntry.AccountName}, {accountEntry.EntryType} : {accountEntry.EffectiveDate.ToShortDateString()}, {accountEntry.Amount}");
+    #endregion
 
-            accountEntries.Add(accountEntry);
+    string[] subFolders = Directory.GetDirectories(sourceFolderPath);
+    Console.WriteLine();
+    ConsoleWrite($"Start merging PDF files from '{sourceFolderPath}'.");
+
+    if (subFolders.Length == 0)
+        ConsoleWrite($"No subfolders.");
+    else
+    {
+        foreach (var folderPath in subFolders)
+        {
+            var mergedFileName = MergeLocalPdfs(folderPath);
+            ConsoleWrite($"Start merging files in subdirectories...", level + 1);
+            MergeLoc(folderPath, level + 1);
         }
     }
-}
-
-decimal? GetAmount(Match match, bool isCardAccount, bool forSG)
-{
-    decimal? r = 0;
-    var amountHasBeenFound = match.Groups["Amount"].Success;
-    r = amountHasBeenFound ? (decimal.Parse(match.Groups["Amount"].Value.Replace(".", ""))) : (decimal?)null;
-    if (r.HasValue && isCardAccount) r = -Math.Abs(r.Value);
-    return r;
-}
-
-DateTime GetFileEditionDate(string fileName)
-{
-    var regex = new Regex(@"_(\d{8})\.");
-    var match = regex.Match(fileName);
-
-    if (match.Success && DateTime.TryParseExact(match.Groups[1].Value, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out DateTime date))
-    {
-        return date;
-    }
-
-    throw new ArgumentException();
-}
-
-// Export to CSV
-var timeStamp = DateTime.Now.ToString("yyyyMMdd-hhmmss");
-var exportFileName = $"Export des comptes - {timeStamp}.csv";
-var exportPath = "\\\\SAPIENCE12\\Partage\\Pierre Wattenne\\Documents justificatifs\\Relevés de compte";
-exportPath = "C:\\Users\\patrice.ongla.ext\\Downloads";
-var exportFullFileName = Path.Combine(exportPath, exportFileName);
-using (var writer = new StreamWriter(exportFullFileName))
-using (var csv = new CsvWriter(writer, new CsvHelper.Configuration.CsvConfiguration(CultureInfo.CurrentCulture)
-{
-    Delimiter = ";"
-}))
-{
-    csv.WriteRecords(accountEntries);
-}
-;
-
-var msg = $"Fini. {accountEntries.Count} mouvements, Montant total : {accountEntries.Sum(d=> d.Amount)}. \nData exported in '{exportFullFileName}'";
-System.Diagnostics.Debug.Print(msg);
-Console.WriteLine(msg);
-
-void SetSubPatterns(bool forSG, string entryType)
-{
-    if (forSG)
-    {
-        datePattern = (entryType == "CB") ? longDatePattern : veryLongDatePattern;
-        amountPattern = amountPattern.Replace(@" ", @"\.");
-    }
-    else
-    {
-        datePattern = shortDatePattern;
-        amountPattern = amountPattern.Replace(@"\.", @" ");
-    }
+    ConsoleWrite($"PDF files merged in '{sourceFolderPath}'.");
 
 }
 
-string GetPattern(bool forSG, string entryType)
-{
-    var EffectiveDatePattern = $"(?'EffectiveDate'{datePattern.Replace("EntryMonth", "EffectiveDateMonth")})";
-    var valueDatePattern = $"(?'ValueDate'{datePattern.Replace("EntryMonth", "ValueDateMonth")})";
-    var labelPattern = "(?'Label'.+?)";
 
-
-    string r;
-    if (forSG)
-    {
-        var valueDatePart = (entryType == "CB") ? "" : valueDatePattern + @"\s";
-        r = $@"{EffectiveDatePattern}\s{valueDatePart}{labelPattern}{spaceOrEndOfLinePattern}{amountPattern}";
-    }
-    else
-    {
-        datePattern = @"\d{2}/\d{2}";
-        amountPattern = amountPattern.Replace(@"\.", @"\s");
-        r = $@"{EffectiveDatePattern}\s{labelPattern}{spaceOrEndOfLinePattern}{amountPattern}";
-    }
-
-    return r;
-}
-
-string GetTextToParse(string allText, bool forSG, string entryType)
-{
-    int parsingStart, parsingEnd = 0;
-    var startTextPattern = "";
-    var endTextMark = "";
-    if (forSG)
-    {
-        startTextPattern = (entryType == "CB") ? $@"(?:Opérations effectuées en France en euros :)" : $@"SOLDE PRÉCÉDENT AU {veryLongDatePattern}{spaceOrEndOfLinePattern}{amountPattern}";
-        endTextMark = (entryType == "CB") ? "TOTAL NET DES OPÉRATIONS" : "TOTAUX DES MOUVEMENTS";
-    }
-    else
-    {
-        startTextPattern = $@"Ancien solde au {veryLongDatePattern}{spaceOrEndOfLinePattern}{amountPattern}";
-        endTextMark = "Nouveau solde au";
-    }
-
-    Regex startRegex = new Regex(startTextPattern);
-    var startMatch = startRegex.Match(allText);
-
-    //var monText = "Ancien solde au 10/12/2019\r839,35";
-    //startRegex = new Regex($@"Ancien solde au {longDatePattern}{spaceOrEndOfLinePattern}{amountPattern}");
-    //startMatch = startRegex.Match(allText);
-
-    parsingStart = startMatch.Index + startMatch.Length;
-    parsingEnd = allText.IndexOf(endTextMark);
-
-    var r = allText.Substring(parsingStart, parsingEnd - parsingStart);
-    return r;
-}
-
-public class AccountEntry
-{
-    public required String AccountName { get; set; }
-    public required String EntryType { get; set; }
-    public DateTime EffectiveDate { get; set; }
-    public DateTime? ValueDate { get; set; }
-    public required string Label { get; set; }
-    public decimal? Amount { get; set; }
-}
